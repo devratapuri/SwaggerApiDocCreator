@@ -2,10 +2,12 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"os"
+	"reflect"
 	"strings"
 )
 
@@ -73,7 +75,7 @@ func main() {
 			fmt.Print("Enter the path to the Swagger YAML file: ")
 			filePath, _ := reader.ReadString('\n')
 			filePath = strings.TrimSpace(filePath)
-			err := updateSwagger(filePath)
+			err := updateSwagger(filePath, reader)
 			if err != nil {
 				fmt.Println("Error updating Swagger file:", err)
 			}
@@ -111,15 +113,14 @@ func createSwagger(filePath string) error {
 }
 
 // Update an existing Swagger YAML file
-func updateSwagger(filePath string) error {
+func updateSwagger(filePath string, reader *bufio.Reader) error {
 	// Read existing Swagger YAML file
 	swagger, err := readSwaggerFile(filePath)
 	if err != nil {
 		return err
 	}
 
-	// Adding a new path based on user input
-	reader := bufio.NewReader(os.Stdin)
+	// Adding or updating an existing path based on user input
 	fmt.Print("Enter the path to add/update (e.g., /pets): ")
 	path, _ := reader.ReadString('\n')
 	path = strings.TrimSpace(path)
@@ -128,37 +129,120 @@ func updateSwagger(filePath string) error {
 	method, _ := reader.ReadString('\n')
 	method = strings.ToLower(strings.TrimSpace(method))
 
-	newOperation := Operation{
-		Summary:     "Sample operation for " + path,
-		Description: "This is a sample description for the new operation.",
-		Responses: map[string]Response{
-			"200": {
-				Description: "Successful response",
-				Content: map[string]MediaType{
-					"application/json": {
-						Schema: Schema{
-							Type: "object",
-							Properties: map[string]Schema{
-								"id":   {Type: "integer"},
-								"name": {Type: "string"},
-							},
-						},
-					},
-				},
-			},
-		},
+	// Prompt user to provide JSON response as a string or a file path
+	fmt.Print("Enter JSON response directly or type 'file' to provide a file path: ")
+	inputType, _ := reader.ReadString('\n')
+	inputType = strings.TrimSpace(strings.ToLower(inputType))
+
+	var jsonData map[string]interface{}
+
+	if inputType == "file" {
+		// User wants to provide a file path
+		fmt.Print("Enter the JSON file path: ")
+		jsonFilePath, _ := reader.ReadString('\n')
+		jsonFilePath = strings.TrimSpace(jsonFilePath)
+
+		fileData, err := ioutil.ReadFile(jsonFilePath)
+		if err != nil {
+			return err
+		}
+
+		err = json.Unmarshal(fileData, &jsonData)
+		if err != nil {
+			return err
+		}
+	} else {
+		// User provides JSON directly
+		err = json.Unmarshal([]byte(inputType), &jsonData)
+		if err != nil {
+			return err
+		}
 	}
 
-	// Update Swagger with the new operation
+	// Generate the schema from JSON
+	schema := generateSchema(jsonData)
+
+	// Check if the path and method already exist
 	if swagger.Paths == nil {
 		swagger.Paths = make(map[string]map[string]Operation)
 	}
 	if swagger.Paths[path] == nil {
 		swagger.Paths[path] = make(map[string]Operation)
 	}
-	swagger.Paths[path][method] = newOperation
 
+	// Update the existing operation or create a new one
+	if existingOperation, ok := swagger.Paths[path][method]; ok {
+		// If operation already exists, update the response
+		fmt.Println("Updating the existing operation response...")
+		existingOperation.Responses["200"] = Response{
+			Description: "Successful response",
+			Content: map[string]MediaType{
+				"application/json": {
+					Schema: schema,
+				},
+			},
+		}
+		swagger.Paths[path][method] = existingOperation
+	} else {
+		// Create a new operation if it does not exist
+		fmt.Println("Creating a new operation...")
+		newOperation := Operation{
+			Summary:     "Sample operation for " + path,
+			Description: "This is a sample description for the new operation.",
+			Responses: map[string]Response{
+				"200": {
+					Description: "Successful response",
+					Content: map[string]MediaType{
+						"application/json": {
+							Schema: schema,
+						},
+					},
+				},
+			},
+		}
+		swagger.Paths[path][method] = newOperation
+	}
+
+	// Write the updated Swagger YAML back to the file
 	return writeSwaggerFile(filePath, swagger)
+}
+
+// Generate a Swagger schema from a JSON object
+func generateSchema(data map[string]interface{}) Schema {
+	schema := Schema{Type: "object", Properties: make(map[string]Schema)}
+
+	for key, value := range data {
+		fieldType := reflect.TypeOf(value).Kind()
+		propSchema := Schema{Type: getSwaggerType(fieldType)}
+		if fieldType == reflect.Map {
+			propSchema.Type = "object"
+		} else if fieldType == reflect.Slice {
+			propSchema.Type = "array"
+		}
+		schema.Properties[key] = propSchema
+	}
+
+	return schema
+}
+
+// Get Swagger-compatible type from Go's reflect kind
+func getSwaggerType(kind reflect.Kind) string {
+	switch kind {
+	case reflect.String:
+		return "string"
+	case reflect.Int, reflect.Int32, reflect.Int64:
+		return "integer"
+	case reflect.Float32, reflect.Float64:
+		return "number"
+	case reflect.Bool:
+		return "boolean"
+	case reflect.Slice:
+		return "array"
+	case reflect.Map:
+		return "object"
+	default:
+		return "string"
+	}
 }
 
 // Read an existing Swagger YAML file
