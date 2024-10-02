@@ -2,12 +2,10 @@ package main
 
 import (
 	"bufio"
-	// "encoding/json"
 	"fmt"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"os"
-	// "reflect"
 	"strings"
 )
 
@@ -41,35 +39,47 @@ type Schema struct {
 func main() {
 	reader := bufio.NewReader(os.Stdin)
 
-	// Ask user for the YAML file path
-	fmt.Print("Enter the path to the Swagger YAML file (or 'new' to create a new file): ")
-	filePath, _ := reader.ReadString('\n')
-	filePath = strings.TrimSpace(filePath)
+	for {
+		// Ask user for the desired action
+		fmt.Print("\nEnter action (view/create/update/exit): ")
+		action, _ := reader.ReadString('\n')
+		action = strings.ToLower(strings.TrimSpace(action))
 
-	// Ask user for the desired action
-	fmt.Print("Enter action (view/create/update): ")
-	action, _ := reader.ReadString('\n')
-	action = strings.ToLower(strings.TrimSpace(action))
+		// Exit the program if the user types 'exit'
+		if action == "exit" {
+			fmt.Println("Exiting program.")
+			break
+		}
 
-	// Handle the desired action
-	switch action {
-	case "view":
-		err := viewSwagger(filePath)
-		if err != nil {
-			fmt.Println("Error viewing Swagger file:", err)
+		// Handle the desired action
+		switch action {
+		case "view":
+			fmt.Print("Enter the path to the Swagger YAML file: ")
+			filePath, _ := reader.ReadString('\n')
+			filePath = strings.TrimSpace(filePath)
+			err := viewSwagger(filePath)
+			if err != nil {
+				fmt.Println("Error viewing Swagger file:", err)
+			}
+		case "create":
+			fmt.Print("Enter the path to create a new Swagger YAML file: ")
+			filePath, _ := reader.ReadString('\n')
+			filePath = strings.TrimSpace(filePath)
+			err := createSwagger(filePath)
+			if err != nil {
+				fmt.Println("Error creating Swagger file:", err)
+			}
+		case "update":
+			fmt.Print("Enter the path to the Swagger YAML file: ")
+			filePath, _ := reader.ReadString('\n')
+			filePath = strings.TrimSpace(filePath)
+			err := updateSwagger(filePath)
+			if err != nil {
+				fmt.Println("Error updating Swagger file:", err)
+			}
+		default:
+			fmt.Println("Invalid action. Please enter 'view', 'create', 'update', or 'exit'.")
 		}
-	case "create":
-		err := createSwagger(filePath)
-		if err != nil {
-			fmt.Println("Error creating Swagger file:", err)
-		}
-	case "update":
-		err := updateSwagger(filePath)
-		if err != nil {
-			fmt.Println("Error updating Swagger file:", err)
-		}
-	default:
-		fmt.Println("Invalid action. Please enter 'view', 'create', or 'update'.")
 	}
 }
 
@@ -85,7 +95,7 @@ func viewSwagger(filePath string) error {
 	return nil
 }
 
-// Create a new Swagger YAML file
+// Create a new Swagger YAML file with a basic structure
 func createSwagger(filePath string) error {
 	swagger := SwaggerTemplate{
 		OpenAPI: "3.0.3",
